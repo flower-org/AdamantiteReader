@@ -10,17 +10,15 @@ public class EthernetTest {
     public static void main(String[] args) {
         // Default port to 8888 if not provided as an argument
         int port = args.length > 0 ? Integer.parseInt(args[0]) : 8888;
-        String ipAddress = "172.16.1.1";
-        // Assuming a typical 255.255.255.0 subnet mask.
-        // 255.255.255.255 can also be used as the universal broadcast address
-        String broadcastAddress = "172.16.1.255";
+        String bindIpAddress = "172.16.1.1";
+
+        // Unicast target variables
+        String targetIpAddress = "172.16.1.2";           // Target specific IP
 
         // 1) Run UDP Server on a background thread
         Thread serverThread = new Thread(() -> {
-            try (DatagramSocket serverSocket = new DatagramSocket(null)) {
-                // Bind to wildcard address to receive broadcast packets on this port
-                serverSocket.bind(new java.net.InetSocketAddress(port));
-                System.out.println("UDP Server listening on port " + port + " for broadcasts");
+            try (DatagramSocket serverSocket = new DatagramSocket(port, InetAddress.getByName(bindIpAddress))) {
+                System.out.println("UDP Server listening tightly on " + bindIpAddress + ":" + port + " for unicast packets");
                 byte[] receiveBuffer = new byte[4096];
 
                 long windowStart = System.currentTimeMillis();
@@ -94,11 +92,10 @@ public class EthernetTest {
         serverThread.start();
 
         // 2) Send UDP packets periodically (every second)
-        try (DatagramSocket senderSocket = new DatagramSocket(0, InetAddress.getByName(ipAddress))) {
-            senderSocket.setBroadcast(true);
-            InetAddress targetBroadcast = InetAddress.getByName(broadcastAddress);
+        try (DatagramSocket senderSocket = new DatagramSocket(0, InetAddress.getByName(bindIpAddress))) {
+            InetAddress targetUnicast = InetAddress.getByName(targetIpAddress);
 
-            System.out.println("UDP Sender broadcasting to " + broadcastAddress + ":" + port + " every 1 second...");
+            System.out.println("UDP Sender unicasting to " + targetIpAddress + ":" + port + "...");
 
             long windowStart = System.currentTimeMillis();
             long totalBytesSent = 0;
@@ -106,7 +103,7 @@ public class EthernetTest {
 
             int counter = 0;
             byte[] sendBuffer = new byte[1024];
-            DatagramPacket sendPacket = new DatagramPacket(sendBuffer, sendBuffer.length, targetBroadcast, port);
+            DatagramPacket sendPacket = new DatagramPacket(sendBuffer, sendBuffer.length, targetUnicast, port);
 
             while (true) {
                 // Keep string allocation minimal
