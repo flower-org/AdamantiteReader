@@ -23,9 +23,25 @@ public class EthernetTest {
                 System.out.println("UDP Server listening on port " + port + " for broadcasts");
                 byte[] receiveBuffer = new byte[4096];
 
+                long windowStart = System.currentTimeMillis();
+                long totalBytesReceived = 0;
+
                 while (true) {
                     DatagramPacket receivePacket = new DatagramPacket(receiveBuffer, receiveBuffer.length);
                     serverSocket.receive(receivePacket);
+
+                    // Overhead: Ethernet Header(14) + FCS(4) + IPv4 Header(20) + UDP Header(8) = 46 bytes
+                    int totalPacketSize = receivePacket.getLength() + 46;
+                    totalBytesReceived += totalPacketSize;
+
+                    long now = System.currentTimeMillis();
+                    long elapsed = now - windowStart;
+                    if (elapsed >= 1000) {
+                        double mbps = (totalBytesReceived * 8.0 * 1000.0) / (elapsed * 1000000.0);
+                        System.out.printf("[SERVER] Current Receive Rate: %.6f Mbps%n", mbps);
+                        windowStart = now;
+                        totalBytesReceived = 0;
+                    }
 
                     String message = new String(receivePacket.getData(), 0, receivePacket.getLength(), StandardCharsets.UTF_8).trim();
 
@@ -57,6 +73,9 @@ public class EthernetTest {
 
             System.out.println("UDP Sender broadcasting to " + broadcastAddress + ":" + port + " every 1 second...");
 
+            long windowStart = System.currentTimeMillis();
+            long totalBytesSent = 0;
+
             int counter = 0;
             while (true) {
                 String payload = "Ethernet Test Packet #" + (++counter) + " at " + new Date();
@@ -64,6 +83,20 @@ public class EthernetTest {
 
                 DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length, targetBroadcast, port);
                 senderSocket.send(sendPacket);
+
+                // Overhead: Ethernet Header(14) + FCS(4) + IPv4 Header(20) + UDP Header(8) = 46 bytes
+                int totalPacketSize = sendPacket.getLength() + 46;
+                totalBytesSent += totalPacketSize;
+
+                long now = System.currentTimeMillis();
+                long elapsed = now - windowStart;
+                if (elapsed >= 1000) {
+                    double mbps = (totalBytesSent * 8.0 * 1000.0) / (elapsed * 1000000.0);
+                    System.out.printf("[SENDER] Current Send Rate: %.6f Mbps%n", mbps);
+                    windowStart = now;
+                    totalBytesSent = 0;
+                }
+
                 System.out.println("[SENDER] Sent: " + payload);
 
                 Thread.sleep(1000);
