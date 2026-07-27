@@ -54,6 +54,18 @@ public class MainForm {
         return tabs;
     }
 
+    public void loadTestEthernet() {
+        EthernetLoadTestForm ethernetLoadTestForm = new EthernetLoadTestForm();
+        final Tab tab = new Tab("Ethernet Load Test", ethernetLoadTestForm);
+        tab.setClosable(true);
+
+        addTab(tab);
+    }
+
+    public void loadTestUsb() {
+        JavaFxUtils.showMessage("Test USB", "This is a test of the USB connection.");
+    }
+
     public void setMainStage(@Nullable Stage mainStage) {
         this.mainStage = mainStage;
     }

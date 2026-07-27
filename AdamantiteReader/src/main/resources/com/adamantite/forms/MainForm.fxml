@@ -9,7 +9,7 @@
 <?import javafx.scene.layout.AnchorPane?>
 <?import javafx.scene.layout.VBox?>
 
-<VBox prefHeight="400.0" prefWidth="478.0" xmlns="http://javafx.com/javafx/23.0.1" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.adamantite.forms.MainForm">
+<VBox prefHeight="400.0" prefWidth="478.0" xmlns="http://javafx.com/javafx/26" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.adamantite.forms.MainForm">
     <MenuBar VBox.vgrow="NEVER">
         <Menu mnemonicParsing="false" text="File">
          <MenuItem mnemonicParsing="false" onAction="#openDbInClientMode" text="Open DB in Client Mode" />
@@ -20,6 +20,12 @@
             <MenuItem mnemonicParsing="false" onAction="#closeAllTabs" text="Close all tabs" />
             <MenuItem mnemonicParsing="false" onAction="#quit" text="Quit" />
         </Menu>
+      <Menu mnemonicParsing="false" text="Load Test">
+        <items>
+          <MenuItem mnemonicParsing="false" onAction="#loadTestEthernet" text="Ethernet" />
+            <MenuItem mnemonicParsing="false" onAction="#loadTestUsb" text="USB" />
+        </items>
+      </Menu>
       <Menu mnemonicParsing="false" text="Token">
         <items>
           <MenuItem mnemonicParsing="false" onAction="#backups" text="DB Backups" />
