@@ -1,0 +1,174 @@
+package com.adamantite.dbcodec;
+
+import com.adamantite.db.Block;
+import com.adamantite.db.BlockType;
+import com.adamantite.forms.PhraserDbForm;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.security.NoSuchAlgorithmException;
+import java.security.spec.InvalidKeySpecException;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+
+import static com.google.common.base.Preconditions.checkNotNull;
+import static com.adamantite.db.Block.FLASH_SECTOR_SIZE;
+import static com.adamantite.utils.Pbkdf2Tool.HARDCODED_IV_MASK;
+import static com.adamantite.utils.Pbkdf2Tool.getPbkdf2Key;
+
+public class DbFileManager {
+    final static Logger LOGGER = LoggerFactory.getLogger(PhraserDbForm.class);
+
+    public static void writeBlocksToFile(List<Block> srcBlocks, String password, int iterations, File file) throws IOException, InvalidKeySpecException, NoSuchAlgorithmException {
+        List<Block> blocks = new ArrayList<>(srcBlocks);
+
+        // 1. Form KeyBlockKey from password using PBKDF2 and hardcoded stuff
+        byte[] keyBlockKey = getPbkdf2Key(password, iterations);
+
+        // 2. Get latest KeyBlock
+        Block latestKeyBlock = null;
+        for (Block block : blocks) {
+            if (block.blockType() == BlockType.KEY_BLOCK) {
+                if (latestKeyBlock == null || latestKeyBlock.getVersion() < block.getVersion()) {
+                    latestKeyBlock = block;
+                }
+            }
+        }
+        if (latestKeyBlock == null) {
+            throw new RuntimeException("KeyBlock not found");
+        }
+
+        // 3. Get MainKey and IvMask from Latest KeyBlock
+        byte[] mainKey = checkNotNull(latestKeyBlock.keyBlock()).key();
+        byte[] ivMask = checkNotNull(latestKeyBlock.keyBlock()).iv();
+
+        // 4. If we have less blocks than our capacity, complement with dummys
+        int blockCount = latestKeyBlock.keyBlock().blockCount();
+        if (blocks.size() < blockCount) {
+            for (int i = blocks.size(); i < blockCount; i++) {
+                blocks.add(Block.DUMMY);
+            }
+        }
+
+        // 5. Shuffle blocks for security
+        Collections.shuffle(blocks);
+        int keyBlockPos = blocks.indexOf(latestKeyBlock);
+        if (keyBlockPos >= 128) {
+            int pos = (int)(Math.random()*128);
+            Block tmp = blocks.get(pos);
+            blocks.set(pos, latestKeyBlock);
+            blocks.set(keyBlockPos, tmp);
+        }
+
+        // 6. Encrypt KeyBlocks with KeyBlockKey, other blocks with MainKey
+        try (FileOutputStream fos = new FileOutputStream(file)) {
+            for (Block block : blocks) {
+                byte[] blockBytes;
+                if (block == Block.DUMMY) {
+                    blockBytes = DbEncoder.dummyBlock();
+                } else {
+                    byte[] dataBytes = FlatBufBlockEncoder.toFlatBufBlock(block);
+                    if (block.blockType() == BlockType.KEY_BLOCK) {
+                        blockBytes = DbEncoder.encodeBlock(dataBytes, block.blockType().code, keyBlockKey, HARDCODED_IV_MASK);
+                    } else {
+                        blockBytes = DbEncoder.encodeBlock(dataBytes, block.blockType().code, mainKey, ivMask);
+                    }
+                }
+
+                fos.write(blockBytes);
+            }
+        }
+    }
+
+    public static List<Block> loadBlocksFromFile(String password, int iterations, File file) throws IOException, InvalidKeySpecException, NoSuchAlgorithmException {
+        List<Block> blocks = new ArrayList<>();
+
+        // 1. Form KeyBlockKey from password using PBKDF2 and hardcoded stuff
+        byte[] keyBlockKey = getPbkdf2Key(password, iterations);
+        assert(keyBlockKey.length == 32);
+
+        // 2. Locate latest KeyBlock, decrypt with KeyBlockKey
+        Block latestKeyBlock = null;
+        try (FileInputStream fis = new FileInputStream(file)) {
+            byte[] buffer = new byte[FLASH_SECTOR_SIZE];
+            int bytesRead;
+            int blockNumber = 0;
+            // Read the file in blocks
+            while ((bytesRead = fis.read(buffer)) != -1) {
+                // Try to decode block
+                BlockData blockData = null;
+                try {
+                    blockData = DbEncoder.decodeBlock(buffer, keyBlockKey, HARDCODED_IV_MASK);
+                } catch (ChecksumException e) {
+                    LOGGER.trace("Block checksum failed", e);
+                } catch (Exception e) {
+                    LOGGER.error("Block decoding issue", e);
+                }
+                if (blockData != null) {
+                    if (blockData.blockType == BlockType.KEY_BLOCK) {
+                        Block keyBlock = Block.of(FlatBufBlockDecoder.fromFlatBufKeyBlock(blockData.blockData), blockNumber);
+                        blocks.add(keyBlock);
+                        if (latestKeyBlock == null || latestKeyBlock.getVersion() < checkNotNull(keyBlock.keyBlock()).version()) {
+                            latestKeyBlock = keyBlock;
+                        }
+                    }
+                }
+                blockNumber++;
+            }
+        }
+        if (latestKeyBlock == null) {
+            throw new RuntimeException("Failed to decrypt KeyBlock");
+        }
+
+        // 3. Get MainKey and IvMask from Latest KeyBlock
+        byte[] mainKey = checkNotNull(latestKeyBlock.keyBlock()).key();
+        byte[] ivMask = checkNotNull(latestKeyBlock.keyBlock()).iv();
+
+        // 4. Second pass to open all blocks, decrypt with MainKey and IvMask
+        try (FileInputStream fis = new FileInputStream(file)) {
+            byte[] buffer = new byte[FLASH_SECTOR_SIZE];
+            int bytesRead;
+            int blockNumber = 0;
+            // Read the file in blocks
+            while ((bytesRead = fis.read(buffer)) != -1) {
+                // Try to decode block
+                BlockData blockData = null;
+                try {
+                    blockData = DbEncoder.decodeBlock(buffer, mainKey, ivMask);
+                } catch (ChecksumException e) {
+                    LOGGER.trace("Block checksum failed", e);
+                } catch (Exception e) {
+                    LOGGER.error("Block decoding issue", e);
+                }
+                if (blockData != null) {
+                    Block block;
+                    switch (blockData.blockType) {
+                        case FOLDERS_BLOCK:
+                            block = Block.of(FlatBufBlockDecoder.fromFlatBufFoldersBlock(blockData.blockData), blockNumber);
+                            break;
+                        case SYMBOL_SETS_BLOCK:
+                            block = Block.of(FlatBufBlockDecoder.fromFlatBufSymbolSetsBlock(blockData.blockData), blockNumber);
+                            break;
+                        case PHRASE_TEMPLATES_BLOCK:
+                            block = Block.of(FlatBufBlockDecoder.fromFlatBufPhraseTemplatesBlock(blockData.blockData), blockNumber);
+                            break;
+                        case PHRASE_BLOCK:
+                            block = Block.of(FlatBufBlockDecoder.fromFlatBufPhraseBlock(blockData.blockData), blockNumber);
+                            break;
+                        default:
+                            throw new RuntimeException("Unexpected block type " + blockData.blockType);
+                    }
+                    blocks.add(block);
+                }
+                blockNumber++;
+            }
+        }
+
+        return blocks;
+    }
+}

@@ -1,0 +1,35 @@
+package com.adamantite.dbcodec;
+
+import com.adamantite.db.Block;
+import com.adamantite.db.DefaultDBCreator;
+import org.junit.jupiter.api.Test;
+
+import java.io.File;
+import java.io.IOException;
+import java.security.NoSuchAlgorithmException;
+import java.security.spec.InvalidKeySpecException;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+public class DbFileManagerTest {
+    static final String PASSWORD = "qwerty";
+
+    @Test
+    public void testSaveLoad() throws IOException, InvalidKeySpecException, NoSuchAlgorithmException {
+        List<Block> db = DefaultDBCreator.initDefaultBlockConfigWithPhrase("MyDB");
+
+        File f = File.createTempFile("adamantite-tmp", ".phr");
+        DbFileManager.writeBlocksToFile(db, PASSWORD, 10000, f);
+
+        List<Block> db2 = DbFileManager.loadBlocksFromFile(PASSWORD, 10000, f);
+
+        assertEquals(db.size(), db2.size());
+
+        //TODO: actual blocks only
+/*        for (Block block : db) {
+            assertTrue(db2.contains(block));
+        }*/
+    }
+}

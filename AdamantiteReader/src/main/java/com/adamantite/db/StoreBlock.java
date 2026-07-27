@@ -1,0 +1,23 @@
+package com.adamantite.db;
+
+import org.immutables.value.Value;
+
+@Value.Immutable
+public interface StoreBlock {
+    /** 16 bit */
+    int blockId();
+
+    /** 32 bit */
+    long version();//32 bit
+
+    /** 64 bit */
+    long entropy();//64 bit
+
+    static StoreBlock of(int blockId, long version, long entropy) {
+        return ImmutableStoreBlock.builder()
+            .blockId(blockId)
+            .version(version)
+            .entropy(entropy)
+            .build();
+    }
+}
